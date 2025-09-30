@@ -294,4 +294,17 @@ const uint8_t analog_pin_to_channel[] = {
 #define SERIAL_PORT_HARDWARE      Serial1
 #define SERIAL_PORT_USBVIRTUAL    Serial
 
+#if defined(HWSERIAL1)
+#define HWSERIAL1_TXC_VECTOR (USART1_TXC_vect)
+#endif
+#if defined(HWSERIAL0)
+#define HWSERIAL0_TXC_VECTOR (USART3_TXC_vect)
+#endif
+#if defined(HWSERIAL2)
+#define HWSERIAL2_TXC_VECTOR (USART0_TXC_vect)
+#endif
+#if defined(HWSERIAL3)
+#define HWSERIAL3_TXC_VECTOR (USART2_TXC_vect)
+#endif
+
 #endif

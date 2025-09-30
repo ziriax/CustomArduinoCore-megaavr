@@ -54,6 +54,13 @@ ISR(HWSERIAL0_DRE_VECTOR)
 #error "Don't know what the Data Register Empty interrupt vector is called for Serial"
 #endif
 
+#if defined(HWSERIAL0_TXC_VECTOR)
+ISR(HWSERIAL0_TXC_VECTOR)
+{
+  Serial._tx_complete_irq();
+}
+#endif
+
 #if defined(HWSERIAL0)
   UartClass Serial(HWSERIAL0, PIN_WIRE_HWSERIAL0_RX, PIN_WIRE_HWSERIAL0_TX, HWSERIAL0_DRE_VECTOR_NUM, HWSERIAL0_MUX);
 #endif

@@ -54,6 +54,13 @@ ISR(HWSERIAL2_DRE_VECTOR)
 #error "Don't know what the Data Register Empty interrupt vector is called for Serial2"
 #endif
 
+#if defined(HWSERIAL2_TXC_VECTOR)
+ISR(HWSERIAL2_TXC_VECTOR)
+{
+  Serial2._tx_complete_irq();
+}
+#endif
+
 #if defined(HWSERIAL2)
   UartClass Serial2(HWSERIAL2, PIN_WIRE_HWSERIAL2_RX, PIN_WIRE_HWSERIAL2_TX, HWSERIAL2_DRE_VECTOR_NUM, HWSERIAL2_MUX);
 #endif

@@ -97,7 +97,7 @@ void UartClass::_tx_data_empty_irq(void)
     // There must be more data in the output
     // buffer. Send the next byte
     unsigned char c = _tx_buffer[_tx_buffer_tail];
-    _tx_buffer_tail = (_tx_buffer_tail + 1) % SERIAL_TX_BUFFER_SIZE;
+    _tx_buffer_tail = (_tx_buffer_tail + 1) & SERIAL_TX_BUFFER_MASK;
 
     // clear the TXCIF flag -- "can be cleared by writing a one to its bit
     // location". This makes sure flush() won't return until the bytes
@@ -114,6 +114,12 @@ void UartClass::_tx_data_empty_irq(void)
         if(_hwserial_dre_interrupt_elevated) {
             CPUINT.LVL1VEC = _prev_lvl1_interrupt_vect;
             _hwserial_dre_interrupt_elevated = 0;
+        }
+
+        // If a TX-complete callback is registered, enable TXC interrupt to be
+        // notified exactly when the last bit has been transmitted.
+        if (_tx_complete_cb) {
+            (*_hwserial_module).CTRLA |= USART_TXCIE_bm;
         }
     }
 }
@@ -194,7 +200,7 @@ void UartClass::end()
     // Disable receiver and transmitter as well as the RX complete and
     // data register empty interrupts.
     (*_hwserial_module).CTRLB &= ~(USART_RXEN_bm | USART_TXEN_bm);
-    (*_hwserial_module).CTRLA &= ~(USART_RXCIE_bm | USART_DREIE_bm);
+    (*_hwserial_module).CTRLA &= ~(USART_RXCIE_bm | USART_DREIE_bm | USART_TXCIE_bm);
 
     // clear any received data
     _rx_buffer_head = _rx_buffer_tail;
@@ -204,7 +210,7 @@ void UartClass::end()
 
 int UartClass::available(void)
 {
-    return ((unsigned int)(SERIAL_RX_BUFFER_SIZE + _rx_buffer_head - _rx_buffer_tail)) % SERIAL_RX_BUFFER_SIZE;
+    return ((unsigned int)(_rx_buffer_head - _rx_buffer_tail)) & SERIAL_RX_BUFFER_MASK;
 }
 
 int UartClass::peek(void)
@@ -223,7 +229,7 @@ int UartClass::read(void)
         return -1;
     } else {
         unsigned char c = _rx_buffer[_rx_buffer_tail];
-        _rx_buffer_tail = (rx_buffer_index_t)(_rx_buffer_tail + 1) % SERIAL_RX_BUFFER_SIZE;
+        _rx_buffer_tail = (rx_buffer_index_t)((_rx_buffer_tail + 1) & SERIAL_RX_BUFFER_MASK);
         return c;
     }
 }
@@ -237,8 +243,8 @@ int UartClass::availableForWrite(void)
         head = _tx_buffer_head;
         tail = _tx_buffer_tail;
     }
-    if (head >= tail) return SERIAL_TX_BUFFER_SIZE - 1 - head + tail;
-    return tail - head - 1;
+    tx_buffer_index_t space = (tx_buffer_index_t)(tail - head - 1);
+    return space & SERIAL_TX_BUFFER_MASK;
 }
 
 void UartClass::flush()
@@ -288,6 +294,11 @@ size_t UartClass::write(uint8_t c)
         // that the interrupt handler is called in this situation
         (*_hwserial_module).CTRLA &= (~USART_DREIE_bm);
 
+        // Ensure TX-complete interrupt will fire when the last bit is sent
+        if (_tx_complete_cb) {
+            (*_hwserial_module).CTRLA |= USART_TXCIE_bm;
+        }
+
         return 1;
     }
 
@@ -302,7 +313,7 @@ size_t UartClass::write(uint8_t c)
         _hwserial_dre_interrupt_elevated = 1;
     }
 
-    tx_buffer_index_t i = (_tx_buffer_head + 1) % SERIAL_TX_BUFFER_SIZE;
+    tx_buffer_index_t i = (_tx_buffer_head + 1) & SERIAL_TX_BUFFER_MASK;
 
     //If the output buffer is full, there's nothing for it other than to
     //wait for the interrupt handler to empty it a bit (or emulate interrupts)
@@ -317,6 +328,65 @@ size_t UartClass::write(uint8_t c)
     (*_hwserial_module).CTRLA |= USART_DREIE_bm;
 
     return 1;
+}
+
+void UartClass::setTxCompleteCallback(void (*callback)(void*), void* userdata)
+{
+    _tx_complete_cb = callback;
+    _tx_complete_userdata = userdata;
+}
+
+void UartClass::_tx_complete_irq(void)
+{
+    // Disable TX-complete interrupt until more data is queued/written.
+    (*_hwserial_module).CTRLA &= (~USART_TXCIE_bm);
+
+    // Invoke callback if set
+    if (_tx_complete_cb) {
+        _tx_complete_cb(_tx_complete_userdata);
+    }
+}
+
+bool UartClass::tryWrite(uint8_t* data, size_t len)
+{
+    if (len == 0) return false;
+
+    // Calculate available space without blocking
+    tx_buffer_index_t head;
+    tx_buffer_index_t tail;
+    TX_BUFFER_ATOMIC {
+        head = _tx_buffer_head;
+        tail = _tx_buffer_tail;
+    }
+
+    // Determine capacity in ring buffer (leave one slot empty)
+    tx_buffer_index_t space = (tx_buffer_index_t)(tail - head - 1);
+    tx_buffer_index_t capacity = (tx_buffer_index_t)(space & SERIAL_TX_BUFFER_MASK);
+
+    if (capacity < (tx_buffer_index_t)len) {
+        // Not enough room to enqueue all bytes without blocking
+        return false;
+    }
+
+    // Enqueue all bytes without writing directly to TXDATAL
+    _written = true;
+    for (size_t i = 0; i < len; ++i) {
+        _tx_buffer[head] = data[i];
+        head = (head + 1) & SERIAL_TX_BUFFER_MASK;
+    }
+    ATOMIC_BLOCK(ATOMIC_RESTORESTATE) {
+        _tx_buffer_head = head;
+        // Ensure the Data Register Empty interrupt is enabled to start/continue transmission
+        (*_hwserial_module).CTRLA |= USART_DREIE_bm;
+    }
+
+    // If a TX-complete callback is registered, ensure we get TXC interrupt
+    // when the last byte finishes shifting out.
+    if (_tx_complete_cb) {
+        (*_hwserial_module).CTRLA |= USART_TXCIE_bm;
+    }
+
+    return true;
 }
 
 #endif // whole file

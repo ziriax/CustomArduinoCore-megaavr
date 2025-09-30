@@ -47,6 +47,14 @@ using namespace arduino;
 #define SERIAL_TX_BUFFER_SIZE 64
 #endif
 #endif
+#if ((SERIAL_TX_BUFFER_SIZE & (SERIAL_TX_BUFFER_SIZE - 1)) != 0)
+#error "SERIAL_TX_BUFFER_SIZE must be a power of two"
+#endif
+#if ((SERIAL_RX_BUFFER_SIZE & (SERIAL_RX_BUFFER_SIZE - 1)) != 0)
+#error "SERIAL_RX_BUFFER_SIZE must be a power of two"
+#endif
+#define SERIAL_TX_BUFFER_MASK (SERIAL_TX_BUFFER_SIZE - 1)
+#define SERIAL_RX_BUFFER_MASK (SERIAL_RX_BUFFER_SIZE - 1)
 #if !defined(SERIAL_RX_BUFFER_SIZE)
 #if ((RAMEND - RAMSTART) < 1023)
 #define SERIAL_RX_BUFFER_SIZE 16
@@ -150,6 +158,10 @@ class UartClass : public HardwareSerial
     unsigned char _rx_buffer[SERIAL_RX_BUFFER_SIZE];
     unsigned char _tx_buffer[SERIAL_TX_BUFFER_SIZE];
 
+    // Optional user callback invoked when the last transmitted bit completes
+    void (*_tx_complete_cb)(void*);
+    void* _tx_complete_userdata;
+
   public:
     inline UartClass(volatile USART_t *hwserial_module, uint8_t hwserial_rx_pin, uint8_t hwserial_tx_pin, uint8_t dre_vect_num, uint8_t uart_mux);
     void begin(unsigned long baud) { begin(baud, SERIAL_8N1); }
@@ -161,6 +173,10 @@ class UartClass : public HardwareSerial
     virtual int availableForWrite(void);
     virtual void flush(void);
     virtual size_t write(uint8_t);
+    // Non-blocking multi-byte write. Never writes directly to UDR even if
+    // the buffer is empty. Returns true only if all (and at least one) bytes are enqueued; if
+    // there is not enough space, nothing is written and false is returned.
+    bool tryWrite(uint8_t* data, size_t len);
     inline size_t write(unsigned long n) { return write((uint8_t)n); }
     inline size_t write(long n) { return write((uint8_t)n); }
     inline size_t write(unsigned int n) { return write((uint8_t)n); }
@@ -170,9 +186,15 @@ class UartClass : public HardwareSerial
 
     void bind(UartClass& ser) {bound = &ser; }
 
+    // Register a callback to be called exactly when transmission fully completes
+    // (i.e., when the last bit has been shifted out). Callback is invoked in
+    // interrupt context, so it must be ISR-safe.
+    void setTxCompleteCallback(void (*callback)(void*), void* userdata);
+
     // Interrupt handlers - Not intended to be called externally
     inline void _rx_complete_irq(void);
     void _tx_data_empty_irq(void);
+    void _tx_complete_irq(void);
   private:
     void _poll_tx_data_empty(void);
     UartClass* bound = NULL;
