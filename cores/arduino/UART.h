@@ -176,7 +176,7 @@ class UartClass : public HardwareSerial
     // Non-blocking multi-byte write. Never writes directly to UDR even if
     // the buffer is empty. Returns true only if all (and at least one) bytes are enqueued; if
     // there is not enough space, nothing is written and false is returned.
-    bool tryWrite(uint8_t* data, size_t len);
+    bool tryWrite(const uint8_t* data, size_t len);
     inline size_t write(unsigned long n) { return write((uint8_t)n); }
     inline size_t write(long n) { return write((uint8_t)n); }
     inline size_t write(unsigned int n) { return write((uint8_t)n); }

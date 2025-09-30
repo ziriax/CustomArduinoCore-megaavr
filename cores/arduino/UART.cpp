@@ -77,11 +77,7 @@ void serialEventRun(void)
 }
 
 // macro to guard critical sections when needed for large TX buffer sizes
-#if (SERIAL_TX_BUFFER_SIZE > 256)
 #define TX_BUFFER_ATOMIC ATOMIC_BLOCK(ATOMIC_RESTORESTATE)
-#else
-#define TX_BUFFER_ATOMIC
-#endif
 
 // Actual interrupt handlers //////////////////////////////////////////////////////////////
 
@@ -347,9 +343,10 @@ void UartClass::_tx_complete_irq(void)
     }
 }
 
-bool UartClass::tryWrite(uint8_t* data, size_t len)
+bool UartClass::tryWrite(const uint8_t* data, size_t len)
 {
-    if (len == 0) return false;
+    if (len == 0) 
+        return false;
 
     // Calculate available space without blocking
     tx_buffer_index_t head;
@@ -378,12 +375,6 @@ bool UartClass::tryWrite(uint8_t* data, size_t len)
         _tx_buffer_head = head;
         // Ensure the Data Register Empty interrupt is enabled to start/continue transmission
         (*_hwserial_module).CTRLA |= USART_DREIE_bm;
-    }
-
-    // If a TX-complete callback is registered, ensure we get TXC interrupt
-    // when the last byte finishes shifting out.
-    if (_tx_complete_cb) {
-        (*_hwserial_module).CTRLA |= USART_TXCIE_bm;
     }
 
     return true;
