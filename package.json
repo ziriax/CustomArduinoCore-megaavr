@@ -1,0 +1,15 @@
+{
+    "name": "framework-arduino-megaavr-custom",
+    "version": "1.0.0",
+    "description": "A custom version of the Arduino MEGAAVR core",
+    "keywords": [
+      "framework",
+      "arduino",
+      "megaavr"
+    ],
+    "license": "LGPL-2.1-or-later",
+    "repository": {
+      "type": "git",
+      "url": "https://github.com/ziriax/CustomArduinoCore-megaavr.git"
+    }
+  }
