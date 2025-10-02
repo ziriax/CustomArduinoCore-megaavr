@@ -96,6 +96,8 @@ class HardwareSerial : public Stream
     virtual int read(void) = 0;
     virtual void flush(void) = 0;
     virtual size_t write(uint8_t) = 0;
+    virtual bool tryWrite(const uint8_t* data, size_t len) = 0;
+    virtual void setTxCompleteCallback(void (*callback)(void*), void* userdata) = 0;    
     using Print::write; // pull in write(str) and write(buf, size) from Print
     virtual operator bool() = 0;
 };
